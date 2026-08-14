@@ -9,8 +9,8 @@ const reportView = document.getElementById('reportView');
 // ── Theme switcher (upload view) ──
 (function () {
   const root = document.documentElement;
-  let saved = 'storybook';
-  try { saved = localStorage.getItem('ss-theme') || 'storybook'; } catch (e) {}
+  let saved = 'arcade';
+  try { saved = localStorage.getItem('ss-theme') || 'arcade'; } catch (e) {}
   root.dataset.theme = saved;
 
   function setActive(theme) {

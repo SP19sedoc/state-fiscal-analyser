@@ -130,14 +130,8 @@ function buildReportHtml(analysis, filename, pageCount, referenceData, charts) {
   return `
 <div class="app-shell">
   <aside class="sidebar">
-    <h1>SORTED SUMMIT</h1>
+    <h1>State Budget Analyser</h1>
     <p class="subtitle">Public Finance Intelligence</p>
-
-    <div class="theme-toggle" id="themeToggle">
-      <button class="theme-btn" data-theme-choice="storybook">Storybook</button>
-      <button class="theme-btn" data-theme-choice="playground">Playground</button>
-      <button class="theme-btn" data-theme-choice="arcade">Arcade</button>
-    </div>
 
     <div class="sidebar-label">Report</div>
     <div class="meta-card">
@@ -155,6 +149,12 @@ function buildReportHtml(analysis, filename, pageCount, referenceData, charts) {
       <button class="tool-btn primary" id="btnPrint">🖨 Print Report</button>
       <button class="tool-btn" id="btnDownload">⬇ Download HTML</button>
       <button class="tool-btn" id="btnNewAnalysis">← New Analysis</button>
+    </div>
+
+    <div class="theme-toggle" id="themeToggle" style="margin-top: 8px;">
+      <button class="theme-btn" data-theme-choice="storybook">Storybook</button>
+      <button class="theme-btn" data-theme-choice="playground">Playground</button>
+      <button class="theme-btn" data-theme-choice="arcade">Arcade</button>
     </div>
   </aside>
 
@@ -223,8 +223,8 @@ function buildReportHtml(analysis, filename, pageCount, referenceData, charts) {
 /** Wires up interactivity for the HTML built by buildReportHtml(). Call after inserting it into the DOM. */
 function wireReportInteractions(container, onNewAnalysis, htmlForDownload) {
   const root = document.documentElement;
-  let savedTheme = 'storybook';
-  try { savedTheme = localStorage.getItem('ss-theme') || 'storybook'; } catch (e) {}
+  let savedTheme = 'arcade';
+  try { savedTheme = localStorage.getItem('ss-theme') || 'arcade'; } catch (e) {}
   root.dataset.theme = savedTheme;
 
   function setActiveTheme(theme) {
