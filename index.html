@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="storybook">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sorted Summit — State Budget Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Fredoka:wght@500;600;700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,700;6..12,800&family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+<!-- ═══ Upload view ═══ -->
+<div id="uploadView" class="app-shell">
+  <aside class="sidebar">
+    <h1>SORTED SUMMIT</h1>
+    <p class="subtitle">Public Finance Intelligence</p>
+
+    <div class="theme-toggle" id="themeToggle">
+      <button type="button" class="theme-btn" data-theme-choice="storybook">Storybook</button>
+      <button type="button" class="theme-btn" data-theme-choice="playground">Playground</button>
+      <button type="button" class="theme-btn" data-theme-choice="arcade">Arcade</button>
+    </div>
+
+    <p class="sidebar-note">Upload any state budget, CAG report, or state finance document for a structured 9-dimension fiscal analysis.</p>
+
+    <div class="sidebar-label">Analysis Framework</div>
+    <div class="pill-col">
+      <div class="pill"><span class="idx">1</span>Revenue Profile</div>
+      <div class="pill"><span class="idx">2</span>Expenditure Quality</div>
+      <div class="pill"><span class="idx">3</span>Committed Expenditure</div>
+      <div class="pill"><span class="idx">4</span>Fiscal Position</div>
+      <div class="pill"><span class="idx">5</span>Debt Sustainability</div>
+      <div class="pill"><span class="idx">6</span>Off-Budget Borrowings</div>
+      <div class="pill"><span class="idx">7</span>Subsidy Burden</div>
+      <div class="pill"><span class="idx">8</span>Devolution &amp; Grants</div>
+      <div class="pill"><span class="idx">9</span>Budget Credibility</div>
+    </div>
+
+    <div class="sidebar-actions">
+      <span class="badge-pill">State Budget Analyzer</span>
+    </div>
+  </aside>
+
+  <div class="content-col">
+    <div class="sticky-shell">
+      <div class="status-bar">
+        <span>Upload a State Budget Document</span>
+        <span class="tag">PDF only · Max 50 MB · Runs entirely in your browser</span>
+      </div>
+    </div>
+
+    <main>
+      <div class="chart-block">
+        <h2>Upload a State Budget Document</h2>
+        <p class="subtitle">Upload any state budget, CAG report, or state finance document. The tool will analyze it across 9 public finance dimensions and generate a structured report — entirely in your browser, no server involved.</p>
+
+        <form id="upload-form">
+          <div class="settings-panel">
+            <div class="settings-header" id="settings-header">
+              <span>⚙ API Settings</span>
+              <span class="toggle-icon">▼</span>
+            </div>
+            <div class="settings-body" id="settings-body">
+              <p class="settings-note">Your API key is stored only in this browser's <code>localStorage</code>. It is sent only to the provider you choose below — directly from your browser, never through a server.</p>
+
+              <div class="field-row">
+                <label class="field-label" for="provider-select">Provider</label>
+                <select class="field-select" id="provider-select" name="provider">
+                  <option value="anthropic">Anthropic — direct, lowest latency</option>
+                  <option value="openrouter">OpenRouter — many models, cheaper options</option>
+                </select>
+                <div class="provider-note" id="provider-note"></div>
+              </div>
+
+              <div class="field-row">
+                <label class="field-label" for="api-key-input">API Key</label>
+                <input class="field-input" type="password" id="api-key-input" name="api_key" autocomplete="off" spellcheck="false">
+                <div class="api-key-error" id="api-key-error"></div>
+              </div>
+
+              <div class="field-row">
+                <label class="field-label" for="model-select">Model</label>
+                <select class="field-select" id="model-select" name="model"></select>
+              </div>
+
+              <div class="settings-actions">
+                <button type="button" class="btn-save" id="btn-save-settings">Save</button>
+                <button type="button" class="btn-clear" id="btn-clear-key">Clear key</button>
+                <span class="saved-badge" id="saved-badge">✓ Saved</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="drop-zone" id="drop-zone">
+            <div class="icon">📄</div>
+            <p><strong>Drag and drop your PDF here</strong></p>
+            <p>or <label for="file-input" class="browse-link">browse to select a file</label></p>
+            <p class="hint">PDF only · Max 50 MB</p>
+          </div>
+          <input type="file" name="file" id="file-input" accept=".pdf">
+          <div class="file-selected" id="file-selected">📎 <span id="file-name"></span></div>
+          <button type="submit" class="btn-analyze" id="btn-analyze" disabled>Select a file to analyze</button>
+        </form>
+
+        <div class="progress-section" id="progress-section">
+          <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+          <ul class="progress-steps" id="progress-steps">
+            <li id="step-extract"><span class="step-icon">⏳</span> Extracting text from PDF…</li>
+            <li id="step-retrieve"><span class="step-icon">⏳</span> Fetching reference documents for this state…</li>
+            <li id="step-analyze"><span class="step-icon">⏳</span> Analyzing with public finance framework…</li>
+            <li id="step-render"><span class="step-icon">⏳</span> Rendering report…</li>
+          </ul>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ═══ Report view (populated by app.js via reportRender.js) ═══ -->
+<div id="reportView" style="display:none;"></div>
+
+<script src="config.js"></script>
+<script src="pdfExtract.js"></script>
+<script src="stateDetect.js"></script>
+<script src="llmClient.js"></script>
+<script src="chartData.js"></script>
+<script src="reportRender.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
