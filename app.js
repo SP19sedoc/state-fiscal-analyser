@@ -6,11 +6,11 @@
 const uploadView = document.getElementById('uploadView');
 const reportView = document.getElementById('reportView');
 
-// ── Theme switcher (upload view) ──
+// ── Theme switcher (upload view) — Warm / Modern / Neon ──
 (function () {
   const root = document.documentElement;
-  let saved = 'arcade';
-  try { saved = localStorage.getItem('ss-theme') || 'arcade'; } catch (e) {}
+  let saved = 'playground';
+  try { saved = localStorage.getItem('ss-theme') || 'playground'; } catch (e) {}
   root.dataset.theme = saved;
 
   function setActive(theme) {
