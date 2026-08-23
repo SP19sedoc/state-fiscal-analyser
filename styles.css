@@ -141,9 +141,10 @@ section.tabpanel.hidden { display: none; }
    drop it into normal flow as a top block instead — same pattern already used by
    the print stylesheet further down, just without hiding the interactive bits. */
 @media (max-width: 700px) {
-  .app-shell { display: block; }
-  .sidebar { position: static; width: auto; height: auto; max-height: none;
-             border-right: none; border-bottom: var(--border-w) solid var(--border); }
+  .app-shell { display: flex; flex-direction: column; align-items: stretch; }
+  .content-col { order: 1; }
+  .sidebar { order: 2; position: static; width: auto; height: auto; max-height: none;
+             border-right: none; border-top: var(--border-w) solid var(--border); }
   main { padding: 20px 16px 60px; }
   .status-bar, nav.tabs { padding-left: 16px; padding-right: 16px; }
   .kpi-strip { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
