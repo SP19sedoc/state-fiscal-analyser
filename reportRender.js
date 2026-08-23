@@ -318,8 +318,8 @@ function buildReportHtml(analysis, filename, pageCount, referenceData, charts, m
 /** Wires up interactivity for the HTML built by buildReportHtml(). Call after inserting it into the DOM. */
 function wireReportInteractions(container, onNewAnalysis, htmlForDownload) {
   const root = document.documentElement;
-  let savedTheme = 'arcade';
-  try { savedTheme = localStorage.getItem('ss-theme') || 'arcade'; } catch (e) {}
+  let savedTheme = 'playground';
+  try { savedTheme = localStorage.getItem('ss-theme') || 'playground'; } catch (e) {}
   root.dataset.theme = savedTheme;
 
   function setActiveTheme(theme) {
