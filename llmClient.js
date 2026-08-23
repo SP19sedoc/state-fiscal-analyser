@@ -9,6 +9,21 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
+// fetch() rejects (rather than resolving with a non-ok response) only when no HTTP
+// response ever came back — a real network-level failure (DNS, connection reset, a
+// blocked CORS preflight), not an API error like a bad key or rate limit. Those are
+// often transient, so retry once before giving up. A response that *did* come back,
+// even a 401 or 500, is never retried here — that's a real, actionable error already
+// handled by each caller's `if (!res.ok)` branch.
+async function fetchWithRetry(url, options, retryDelayMs = 1500) {
+  try {
+    return await fetch(url, options);
+  } catch (e) {
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    return await fetch(url, options);
+  }
+}
+
 const JSON_SCHEMA = `{
   "document_title": "string — inferred title of the document",
   "state_name": "string — state name (e.g. Karnataka, Bihar)",
@@ -202,8 +217,34 @@ function extractJson(raw) {
   }
 }
 
-async function callAnthropic(apiKey, model, userPrompt) {
-  const res = await fetch(ANTHROPIC_API_URL, {
+// Reads an SSE response body, calling onEvent(dataStr) for each 'data: ' line's
+// payload (excluding the terminal '[DONE]' sentinel some providers send).
+async function readSse(res, onEvent) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop(); // last (possibly partial) line stays in the buffer
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      onEvent(payload);
+    }
+  }
+}
+
+/**
+ * @param {(chunk: string, totalSoFar: string) => void} [onDelta] - called with each
+ * newly streamed text chunk as it arrives, so the UI can show live progress instead
+ * of sitting frozen until the full (often 8k-token) response completes.
+ */
+async function callAnthropic(apiKey, model, userPrompt, onDelta) {
+  const res = await fetchWithRetry(ANTHROPIC_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -217,18 +258,32 @@ async function callAnthropic(apiKey, model, userPrompt) {
       temperature: 0.2,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
+      stream: true,
     }),
   });
   if (!res.ok) {
     const errBody = await res.text();
     throw new Error(`Anthropic API error (${res.status}): ${errBody.slice(0, 500)}`);
   }
-  const data = await res.json();
-  return data.content[0].text;
+
+  let full = '';
+  let streamError = null;
+  await readSse(res, (payload) => {
+    let evt;
+    try { evt = JSON.parse(payload); } catch (e) { return; }
+    if (evt.type === 'content_block_delta' && evt.delta && evt.delta.type === 'text_delta') {
+      full += evt.delta.text;
+      if (onDelta) onDelta(evt.delta.text, full);
+    } else if (evt.type === 'error') {
+      streamError = evt.error && evt.error.message ? evt.error.message : 'stream error';
+    }
+  });
+  if (streamError) throw new Error(`Anthropic API error (stream): ${streamError}`);
+  return full;
 }
 
-async function callOpenRouter(apiKey, model, userPrompt) {
-  const res = await fetch(OPENROUTER_API_URL, {
+async function callOpenRouter(apiKey, model, userPrompt, onDelta) {
+  const res = await fetchWithRetry(OPENROUTER_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -242,26 +297,38 @@ async function callOpenRouter(apiKey, model, userPrompt) {
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
       ],
+      stream: true,
     }),
   });
   if (!res.ok) {
     const errBody = await res.text();
     throw new Error(`OpenRouter API error (${res.status}): ${errBody.slice(0, 500)}`);
   }
-  const data = await res.json();
-  return data.choices[0].message.content;
+
+  let full = '';
+  await readSse(res, (payload) => {
+    let evt;
+    try { evt = JSON.parse(payload); } catch (e) { return; }
+    const delta = evt.choices && evt.choices[0] && evt.choices[0].delta && evt.choices[0].delta.content;
+    if (delta) {
+      full += delta;
+      if (onDelta) onDelta(delta, full);
+    }
+  });
+  return full;
 }
 
 /**
  * Calls the chosen provider and returns the parsed analysis dict, matching
  * analyzer.py's analyze() shape and error-fallback behavior.
+ * @param {(chunk: string, totalSoFar: string) => void} [onDelta] - optional live-progress callback.
  */
-async function analyze(budgetText, filename, pageCount, referenceData, apiKey, provider, model) {
+async function analyze(budgetText, filename, pageCount, referenceData, apiKey, provider, model, onDelta) {
   const userPrompt = buildPrompt(budgetText, filename, pageCount, referenceData);
 
   const raw = provider === 'openrouter'
-    ? await callOpenRouter(apiKey, model, userPrompt)
-    : await callAnthropic(apiKey, model, userPrompt);
+    ? await callOpenRouter(apiKey, model, userPrompt, onDelta)
+    : await callAnthropic(apiKey, model, userPrompt, onDelta);
 
   let result;
   try {

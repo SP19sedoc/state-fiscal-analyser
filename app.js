@@ -5,6 +5,7 @@
 
 const uploadView = document.getElementById('uploadView');
 const reportView = document.getElementById('reportView');
+const predictView = document.getElementById('predictView');
 
 // ── Theme switcher (upload view) — Warm / Modern / Neon ──
 (function () {
@@ -29,6 +30,75 @@ const reportView = document.getElementById('reportView');
     };
   });
 })();
+
+// ── Classroom mode (optional prediction step) ──
+// Off by default — this is purely for teaching contexts. When on, the user guesses
+// the FRBM-compliance call before the AI's assessment is revealed, then sees both
+// side by side. Adds zero friction for the professional-analyst path when left off.
+const classroomToggle = document.getElementById('classroom-mode-toggle');
+(function () {
+  let saved = false;
+  try { saved = localStorage.getItem('ss-classroom-mode') === '1'; } catch (e) {}
+  classroomToggle.checked = saved;
+  classroomToggle.addEventListener('change', () => {
+    try { localStorage.setItem('ss-classroom-mode', classroomToggle.checked ? '1' : '0'); } catch (e) {}
+  });
+})();
+
+const FRBM_GUESS_OPTIONS = [
+  { value: 'compliant', icon: '✅', label: 'Compliant' },
+  { value: 'marginal',  icon: '⚠️', label: 'Marginally breaching' },
+  { value: 'breaching', icon: '🚨', label: 'Breaching' },
+];
+
+function classifyFrbmStatus(statusText) {
+  const s = (statusText || '').toLowerCase();
+  if (s.includes('marginal')) return 'marginal';
+  if (s.includes('breach')) return 'breaching';
+  if (s.includes('compliant')) return 'compliant';
+  return null;
+}
+
+/** Shows the prediction interstitial and resolves with the user's guess value. */
+function showPrediction(stateName, fiscalYear) {
+  return new Promise((resolve) => {
+    predictView.innerHTML = `
+<div class="predict-wrap">
+  <div class="chart-block predict-card">
+    <h2>🎓 Before you see the assessment…</h2>
+    <p class="subtitle">Is ${escapeHtml(stateName)}'s ${escapeHtml(fiscalYear)} budget FRBM-compliant?</p>
+    <div id="predictChoices" class="pill-col"></div>
+  </div>
+</div>`;
+    const choicesEl = predictView.querySelector('#predictChoices');
+    FRBM_GUESS_OPTIONS.forEach((opt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tool-btn';
+      btn.textContent = `${opt.icon} ${opt.label}`;
+      btn.onclick = () => resolve(opt.value);
+      choicesEl.appendChild(btn);
+    });
+    uploadView.style.display = 'none';
+    predictView.style.display = 'block';
+    window.scrollTo(0, 0);
+  });
+}
+
+/** Builds the "your guess vs. actual" banner shown at the top of the report. */
+function guessResultBannerHtml(guessValue, analysis) {
+  const actualStatus = (analysis.fiscal_position && analysis.fiscal_position.frbm_status) || 'Under assessment';
+  const actual = classifyFrbmStatus(actualStatus);
+  const guessOpt = FRBM_GUESS_OPTIONS.find((o) => o.value === guessValue);
+  const resultLabel = actual === null
+    ? "the report doesn't state a clear compliant/breaching call to check this against"
+    : (actual === guessValue ? 'correct ✅' : 'not quite ❌');
+  return `<div class="chart-block guess-banner">
+    <strong>Your guess:</strong> ${escapeHtml(guessOpt ? guessOpt.label : guessValue)}
+    &nbsp;·&nbsp; <strong>Actual:</strong> ${escapeHtml(actualStatus)}
+    &nbsp;·&nbsp; ${resultLabel}
+  </div>`;
+}
 
 // ── Provider / model settings panel ──
 const LS_KEY_PREFIX = 'sorted_summit_';
@@ -106,6 +176,14 @@ const progressSection = document.getElementById('progress-section');
 
 let selectedFile = null;
 
+// Caches the extract+retrieve results (the two steps that never depend on the LLM
+// call) keyed to the exact File object currently selected. If the LLM step fails —
+// a bad response, a rate limit, a network blip — retrying the same file re-runs
+// only the analyze step onward, instead of re-parsing the PDF and re-fetching
+// reference data for no reason. A newly selected file naturally invalidates this,
+// since selectFile() assigns a new File object.
+let cachedExtraction = null; // { file, extracted, referenceData }
+
 function selectFile(file) {
   if (!file || file.type !== 'application/pdf') { alert('Please select a PDF file.'); return; }
   if (file.size > MAX_FILE_MB * 1024 * 1024) { alert(`File exceeds ${MAX_FILE_MB} MB limit.`); return; }
@@ -143,6 +221,26 @@ function advanceTo(index) {
   setProgress([25, 50, 75, 90][index]);
 }
 
+// Ticks off each of the 9 fiscal dimensions as its JSON key appears in the
+// streamed LLM response, so the "Analyzing…" wait shows real progress instead
+// of an indeterminate spinner. Cheap on purpose: a substring check per delta,
+// only against dimensions not yet marked done.
+const analyzeChecklistEl = document.getElementById('analyze-checklist');
+function resetAnalyzeChecklist() {
+  analyzeChecklistEl.innerHTML = DIMENSIONS.map((dim) =>
+    `<span class="chip" data-dim="${dim}">${escapeHtml(DIMENSION_LABELS[dim])}</span>`
+  ).join('');
+}
+function updateAnalyzeChecklist(totalSoFar) {
+  let doneCount = 0;
+  analyzeChecklistEl.querySelectorAll('.chip').forEach((chip) => {
+    const dim = chip.dataset.dim;
+    if (chip.classList.contains('done')) { doneCount++; return; }
+    if (totalSoFar.includes(`"${dim}"`)) { chip.classList.add('done'); doneCount++; }
+  });
+  return doneCount;
+}
+
 // ── Pipeline ──
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -170,28 +268,84 @@ form.addEventListener('submit', async (e) => {
   progressSection.style.display = 'block';
 
   try {
-    advanceTo(0);
-    const extracted = await extractPdf(selectedFile, { maxChars: MAX_EXTRACT_CHARS, filterLang: true });
+    let extracted, referenceData;
+    if (cachedExtraction && cachedExtraction.file === selectedFile) {
+      // Retrying the same file after a failed analyze step — skip straight to it.
+      ({ extracted, referenceData } = cachedExtraction);
+      advanceTo(2);
+    } else {
+      advanceTo(0);
+      extracted = await extractPdf(selectedFile, { maxChars: MAX_EXTRACT_CHARS, filterLang: true });
 
-    advanceTo(1);
-    const referenceData = await fetchReferenceData(extracted.text);
+      advanceTo(1);
+      referenceData = await fetchReferenceData(extracted.text);
+      cachedExtraction = { file: selectedFile, extracted, referenceData };
 
-    advanceTo(2);
-    const analysis = await analyze(
-      extracted.text, selectedFile.name, extracted.pageCount,
-      referenceData, apiKey, provider, modelSelect.value
-    );
+      advanceTo(2);
+    }
+
+    const liveStatus = document.getElementById('analyze-live-status');
+    liveStatus.textContent = '';
+    resetAnalyzeChecklist();
+    startTrivia('trivia-ticker');
+    let analysis;
+    try {
+      analysis = await analyze(
+        extracted.text, selectedFile.name, extracted.pageCount,
+        referenceData, apiKey, provider, modelSelect.value,
+        (chunk, totalSoFar) => {
+          // Streamed response — nudge the bar from 75% toward 89% (90% is reserved
+          // for the render step) as text arrives, so the UI never sits frozen.
+          const doneCount = updateAnalyzeChecklist(totalSoFar);
+          liveStatus.textContent = `(${doneCount}/${DIMENSIONS.length} sections drafted)`;
+          setProgress(Math.min(89, 75 + Math.floor(totalSoFar.length / 200)));
+        }
+      );
+    } finally {
+      stopTrivia();
+    }
+    liveStatus.textContent = '';
+    analyzeChecklistEl.innerHTML = '';
 
     advanceTo(3);
     const charts = buildChartData(analysis);
 
     setProgress(100);
-    await showReport(analysis, selectedFile.name, extracted.pageCount, referenceData, charts);
+
+    let guess = null;
+    if (classroomToggle.checked) {
+      progressSection.style.display = 'none';
+      guess = await showPrediction(analysis.state_name, analysis.fiscal_year);
+    }
+
+    await showReport(analysis, selectedFile.name, extracted.pageCount, referenceData, charts, guess, {
+      truncated: extracted.truncated,
+      charCount: extracted.charCount,
+      provider,
+      model: modelSelect.value,
+    });
   } catch (err) {
     console.error(err);
+    stopTrivia();
+    document.getElementById('analyze-live-status').textContent = '';
+    analyzeChecklistEl.innerHTML = '';
     btnAnalyze.disabled = false;
     btnAnalyze.textContent = 'Error — please try again';
-    alert('Analysis failed: ' + (err.message || err));
+    // fetch() only rejects like this (as opposed to resolving with a non-ok status)
+    // when no HTTP response ever came back — a network-level failure already retried
+    // once in llmClient.js. If it's still failing at this point, the raw browser
+    // message ("Load failed" in Safari, "Failed to fetch" in Chrome) isn't actionable
+    // on its own, so replace it with troubleshooting copy. Real API errors (bad key,
+    // rate limit, etc.) already carry their own specific message and skip this.
+    const isConnectionFailure = err instanceof TypeError
+      || /load failed|failed to fetch|networkerror/i.test(err.message || '');
+    const providerName = provider === 'openrouter' ? 'OpenRouter' : 'Anthropic';
+    const message = isConnectionFailure
+      ? `Couldn't reach ${providerName}'s API, even after a retry. Check your internet connection and try again — ` +
+        `if it keeps happening, try switching provider in Settings, since the issue may be specific to reaching ` +
+        `this one API from your network.`
+      : 'Analysis failed: ' + (err.message || err);
+    alert(message);
     progressSection.style.display = 'none';
   }
 });
@@ -206,8 +360,16 @@ async function getStylesCss() {
   return _stylesCssCache;
 }
 
-async function showReport(analysis, filename, pageCount, referenceData, charts) {
-  reportView.innerHTML = buildReportHtml(analysis, filename, pageCount, referenceData, charts);
+async function showReport(analysis, filename, pageCount, referenceData, charts, guess, meta) {
+  reportView.innerHTML = buildReportHtml(analysis, filename, pageCount, referenceData, charts, meta);
+
+  if (guess) {
+    const heroWrap = reportView.querySelector('.state-hero-wrap');
+    if (heroWrap) heroWrap.insertAdjacentHTML('afterend', guessResultBannerHtml(guess, analysis));
+  }
+
+  predictView.style.display = 'none';
+  predictView.innerHTML = '';
   uploadView.style.display = 'none';
   reportView.style.display = 'block';
   window.scrollTo(0, 0);
@@ -228,6 +390,8 @@ async function showReport(analysis, filename, pageCount, referenceData, charts) 
 function resetToUpload() {
   reportView.style.display = 'none';
   reportView.innerHTML = '';
+  predictView.style.display = 'none';
+  predictView.innerHTML = '';
   uploadView.style.display = 'flex';
   btnAnalyze.disabled = !selectedFile;
   btnAnalyze.textContent = selectedFile ? 'Analyze Document →' : 'Select a file to analyze';

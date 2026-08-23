@@ -18,7 +18,7 @@
     <h1>State Budget Analyser</h1>
     <p class="subtitle">Public Finance Intelligence</p>
 
-    <p class="sidebar-note">Upload any state budget, CAG report, or state finance document for a structured 9-dimension fiscal analysis.</p>
+    <p class="sidebar-note">Upload a state budget document for a structured 9-dimension fiscal analysis. Where available, findings are automatically cross-checked against that state's own CAG audit report and Finance Commission report.</p>
 
     <div class="sidebar-label">Analysis Framework</div>
     <div class="pill-col">
@@ -36,6 +36,11 @@
     <div class="sidebar-actions">
       <span class="badge-pill">State Budget Analyzer</span>
     </div>
+
+    <label class="classroom-toggle" for="classroom-mode-toggle" style="margin-top: 14px;">
+      <input type="checkbox" id="classroom-mode-toggle">
+      <span>🎓 Classroom mode — guess FRBM compliance before you see the result</span>
+    </label>
 
     <div class="theme-toggle" id="themeToggle" style="margin-top: 8px;">
       <button type="button" class="theme-btn" data-theme-choice="storybook">Warm</button>
@@ -55,7 +60,7 @@
     <main>
       <div class="chart-block">
         <h2>Upload a State Budget Document</h2>
-        <p class="subtitle">Upload any state budget, CAG report, or state finance document. The tool will analyze it across 9 public finance dimensions and generate a structured report — entirely in your browser, no server involved.</p>
+        <p class="subtitle">Upload a state budget document. The tool analyzes it across 9 public finance dimensions, automatically cross-referencing it against that state's own CAG audit report and Finance Commission report where available, and generates a structured report — entirely in your browser, no server involved.</p>
 
         <form id="upload-form">
           <div class="settings-panel">
@@ -110,9 +115,11 @@
           <ul class="progress-steps" id="progress-steps">
             <li id="step-extract"><span class="step-icon">⏳</span> Extracting text from PDF…</li>
             <li id="step-retrieve"><span class="step-icon">⏳</span> Fetching reference documents for this state…</li>
-            <li id="step-analyze"><span class="step-icon">⏳</span> Analyzing with public finance framework…</li>
+            <li id="step-analyze"><span class="step-icon">⏳</span> Analyzing with public finance framework… <span id="analyze-live-status" class="live-status"></span></li>
             <li id="step-render"><span class="step-icon">⏳</span> Rendering report…</li>
           </ul>
+          <div class="analyze-checklist" id="analyze-checklist"></div>
+          <div class="trivia-ticker" id="trivia-ticker"></div>
         </div>
       </div>
     </main>
@@ -122,7 +129,11 @@
 <!-- ═══ Report view (populated by app.js via reportRender.js) ═══ -->
 <div id="reportView" style="display:none;"></div>
 
+<!-- ═══ Optional prediction interstitial (classroom mode, populated by app.js) ═══ -->
+<div id="predictView" style="display:none;"></div>
+
 <script src="config.js"></script>
+<script src="trivia.js"></script>
 <script src="pdfExtract.js"></script>
 <script src="stateDetect.js"></script>
 <script src="llmClient.js"></script>

@@ -96,6 +96,18 @@ body { margin: 0; font-family: var(--font-body), -apple-system, BlinkMacSystemFo
 .badge-pill { display: block; text-align: center; background: var(--accent-soft); color: var(--accent); border-radius: var(--radius-pill);
               padding: 8px 12px; font-size: 11px; font-weight: 700; font-family: var(--font-body); }
 
+.classroom-toggle { display: flex; align-items: flex-start; gap: 8px; font-size: 11.5px; color: var(--muted);
+                     line-height: 1.4; cursor: pointer; font-family: var(--font-body); user-select: none; }
+.classroom-toggle input { margin-top: 2px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+.classroom-toggle:hover { color: var(--text); }
+
+/* ── Prediction interstitial (classroom mode) ── */
+#predictView .predict-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+#predictView .predict-card { max-width: 440px; width: 100%; text-align: center; }
+#predictView .predict-card h2 { margin-bottom: 8px; }
+#predictView #predictChoices .tool-btn { text-align: left; }
+.guess-banner { border-left: 4px solid var(--accent); }
+
 /* ── Content column ── */
 .content-col { flex: 1; min-width: 0; }
 .sticky-shell { position: sticky; top: 0; z-index: 10; background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -122,6 +134,20 @@ section.tabpanel.hidden { display: none; }
 .chart-block .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 28px; line-height: 1.5; font-family: var(--font-body); }
 .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; font-size: 12px; font-family: var(--font-mono); }
 .legend .item { background: var(--accent-soft); border: 1px solid var(--border); border-radius: 5px; padding: 4px 10px; color: var(--text); }
+
+/* ── Small-screen layout ──
+   The sidebar is `position: sticky; height: 100vh` for desktop, which works well
+   at 250px wide, but leaves too little room for content on a phone. Below 700px,
+   drop it into normal flow as a top block instead — same pattern already used by
+   the print stylesheet further down, just without hiding the interactive bits. */
+@media (max-width: 700px) {
+  .app-shell { display: block; }
+  .sidebar { position: static; width: auto; height: auto; max-height: none;
+             border-right: none; border-bottom: var(--border-w) solid var(--border); }
+  main { padding: 20px 16px 60px; }
+  .status-bar, nav.tabs { padding-left: 16px; padding-right: 16px; }
+  .kpi-strip { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+}
 
 /* ═══ Upload page ═══ */
 
@@ -182,6 +208,32 @@ section.tabpanel.hidden { display: none; }
 .progress-steps li.active { color: var(--accent); font-weight: 600; }
 .progress-steps li.done { color: #276749; }
 .step-icon { font-size: 0.88rem; }
+.live-status { font-weight: 400; opacity: 0.75; font-variant-numeric: tabular-nums; }
+
+/* Ticks off each of the 9 analysis dimensions as its key appears in the streamed
+   LLM response — gives the "Analyzing…" wait a real, honest progress signal instead
+   of a generic spinner, using content already flowing through onDelta(). */
+.analyze-checklist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.analyze-checklist .chip {
+  font-size: 11px; font-family: var(--font-body); padding: 4px 10px;
+  border-radius: var(--radius-pill); border: var(--border-w) solid var(--border);
+  color: var(--muted); background: var(--card-bg);
+  transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, transform 0.3s ease;
+}
+.analyze-checklist .chip.done {
+  color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+  font-weight: 600; transform: scale(1.04);
+}
+
+/* Rotating "did you know" facts — shown only during the analyze step, the
+   longest wait, so it doesn't feel dead while the LLM call is in flight. */
+.trivia-ticker {
+  margin-top: 14px; padding: 10px 14px; min-height: 20px;
+  background: var(--accent-soft); border: 1px dashed var(--border); border-radius: var(--radius-field);
+  font-size: 0.82rem; color: var(--text); line-height: 1.5; font-family: var(--font-body);
+  opacity: 0; transition: opacity 0.25s ease;
+}
+.trivia-ticker.visible { opacity: 1; }
 
 /* ═══ Report page ═══ */
 
@@ -266,6 +318,14 @@ nav.tabs button.active { background: var(--card-bg); color: var(--accent); box-s
 .notes-block { background: var(--accent-soft); }
 .notes-block strong { color: var(--text); display: block; margin-bottom: 4px; font-family: var(--font-heading); }
 .notes-block p, .notes-block div.notes-text { font-size: 0.82rem; color: var(--muted); line-height: 1.6; font-family: var(--font-body); }
+
+.methodology-block .methodology-intro { font-size: 0.85rem; color: var(--text); line-height: 1.65; font-family: var(--font-body); }
+.methodology-block .provenance-strip { border-top: none; padding-top: 4px; margin: 16px 0 4px; }
+.methodology-block .methodology-note { font-size: 0.72rem; color: var(--muted); font-style: italic; margin: 4px 0 16px; font-family: var(--font-body); }
+.methodology-assumptions { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+.methodology-assumptions strong { color: var(--text); display: block; margin-bottom: 8px; font-family: var(--font-heading); }
+.methodology-assumptions ul { margin: 0; padding-left: 18px; }
+.methodology-assumptions li { font-size: 0.8rem; color: var(--muted); line-height: 1.65; margin-bottom: 6px; font-family: var(--font-body); }
 
 @media print {
   :root, [data-theme] {
