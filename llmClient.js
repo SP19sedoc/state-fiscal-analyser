@@ -254,7 +254,14 @@ async function callAnthropic(apiKey, model, userPrompt, onDelta) {
     },
     body: JSON.stringify({
       model: model || 'claude-sonnet-4-6',
-      max_tokens: 8192,
+      // Generous on purpose: this schema (9 dimensions, each with a
+      // citation-heavy summary/key_stats/sources) plus Claude's tendency to
+      // write fuller sentences per field than other models routinely needs
+      // well over the old 8192 cap — which was silently truncating the
+      // response mid-JSON. Anthropic bills for tokens actually generated,
+      // not this ceiling, so headroom here is free; claude-sonnet-4-6
+      // supports up to 128k output tokens natively.
+      max_tokens: 32000,
       temperature: 0.2,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
@@ -268,18 +275,21 @@ async function callAnthropic(apiKey, model, userPrompt, onDelta) {
 
   let full = '';
   let streamError = null;
+  let truncated = false;
   await readSse(res, (payload) => {
     let evt;
     try { evt = JSON.parse(payload); } catch (e) { return; }
     if (evt.type === 'content_block_delta' && evt.delta && evt.delta.type === 'text_delta') {
       full += evt.delta.text;
       if (onDelta) onDelta(evt.delta.text, full);
+    } else if (evt.type === 'message_delta' && evt.delta && evt.delta.stop_reason === 'max_tokens') {
+      truncated = true;
     } else if (evt.type === 'error') {
       streamError = evt.error && evt.error.message ? evt.error.message : 'stream error';
     }
   });
   if (streamError) throw new Error(`Anthropic API error (stream): ${streamError}`);
-  return full;
+  return { text: full, truncated };
 }
 
 async function callOpenRouter(apiKey, model, userPrompt, onDelta) {
@@ -291,7 +301,9 @@ async function callOpenRouter(apiKey, model, userPrompt, onDelta) {
     },
     body: JSON.stringify({
       model: model || 'deepseek/deepseek-chat-v3-0324',
-      max_tokens: 8192,
+      // See the matching comment in callAnthropic — raised for the same
+      // reason (this schema's realistic output size vs. the old 8192 cap).
+      max_tokens: 16000,
       temperature: 0.2,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -306,16 +318,19 @@ async function callOpenRouter(apiKey, model, userPrompt, onDelta) {
   }
 
   let full = '';
+  let truncated = false;
   await readSse(res, (payload) => {
     let evt;
     try { evt = JSON.parse(payload); } catch (e) { return; }
-    const delta = evt.choices && evt.choices[0] && evt.choices[0].delta && evt.choices[0].delta.content;
+    const choice = evt.choices && evt.choices[0];
+    const delta = choice && choice.delta && choice.delta.content;
     if (delta) {
       full += delta;
       if (onDelta) onDelta(delta, full);
     }
+    if (choice && choice.finish_reason === 'length') truncated = true;
   });
-  return full;
+  return { text: full, truncated };
 }
 
 /**
@@ -326,7 +341,7 @@ async function callOpenRouter(apiKey, model, userPrompt, onDelta) {
 async function analyze(budgetText, filename, pageCount, referenceData, apiKey, provider, model, onDelta) {
   const userPrompt = buildPrompt(budgetText, filename, pageCount, referenceData);
 
-  const raw = provider === 'openrouter'
+  const { text: raw, truncated } = provider === 'openrouter'
     ? await callOpenRouter(apiKey, model, userPrompt, onDelta)
     : await callAnthropic(apiKey, model, userPrompt, onDelta);
 
@@ -346,7 +361,9 @@ async function analyze(budgetText, filename, pageCount, referenceData, apiKey, p
     result.key_concerns = [];
     result.key_positives = [];
     result.policy_recommendations = [];
-    result.analyst_notes = `JSON parse failed: ${e.message}\n\nRaw response:\n${raw.slice(0, 3000)}`;
+    result.analyst_notes = truncated
+      ? `Response was cut off after hitting the max_tokens limit before the JSON finished — try a shorter document, or this model/prompt combination may need a still-higher limit.\n\nRaw response:\n${raw.slice(0, 3000)}`
+      : `JSON parse failed: ${e.message}\n\nRaw response:\n${raw.slice(0, 3000)}`;
   }
 
   if (!result.analysis_date) result.analysis_date = new Date().toISOString().slice(0, 10);
