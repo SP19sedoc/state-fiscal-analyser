@@ -222,6 +222,10 @@ function buildReportHtml(analysis, filename, pageCount, referenceData, charts, m
 
   return `
 <div class="app-shell">
+  <div class="mobile-header">
+    <h1>State Budget Analyser</h1>
+    <p class="subtitle">Public Finance Intelligence</p>
+  </div>
   <aside class="sidebar">
     <h1>State Budget Analyser</h1>
     <p class="subtitle">Public Finance Intelligence</p>
