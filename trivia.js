@@ -143,7 +143,7 @@ function _shuffledTrivia() {
 let _triviaOrder = _shuffledTrivia();
 
 /** Starts rotating facts into the element with id `elId`, one every `intervalMs`. */
-function startTrivia(elId, intervalMs = 9000) {
+function startTrivia(elId, intervalMs = 15000) {
   const el = document.getElementById(elId);
   if (!el) return;
   stopTrivia();
